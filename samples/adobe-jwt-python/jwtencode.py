@@ -1,40 +1,51 @@
 import datetime
-import json
 import jwt
-import os
 import requests
+from urllib.parse import urlencode
 
-# Config Data
-url = 'https://ims-na1.adobelogin.com/ims/exchange/jwt'
-jwtPayloadRaw = """{ "iss": "{The issuer, your Organization ID from the Adobe Developer Console integration, in the format org_ident@AdobeOrg}",
-                     "sub": "{The subject, your Technical Account ID from the Adobe Developer Console integration, in the format: id@techacct.adobe.com}",
-                     "{The API-access claim configured for your organization: https://ims-na1.adobelogin.com/s/ent_analytics_bulk_ingest_sdk}": true,
-                     "aud": "{The audience for the token, your API Key from the Adobe Developer Console integration, in the format: https://ims-na1.adobelogin.com/c/api_key}" }"""
-jwtPayloadJson = json.loads(jwtPayloadRaw)
-jwtPayloadJson["exp"] = datetime.datetime.utcnow() + datetime.timedelta(seconds=30)
+# CONFIG DATA - update these items
+ORG_ID = "Your organization ID, e.g. 12345@AdobeOrg"
+CLIENT_ID = "Your client ID aka API Key"
+CLIENT_SECRET = "Your client Secret"
+TECH_ACCT_ID = "The ID of the technical account associated with the integration"
+PRIV_KEY_PATH = "private.key" # update with full path to your private key if needed
+# list of scope URI strings - refer to the page for your credentials in the Developer Console
+# this will differ depending on which services are associated with the credentials
+# example: SCOPES = ["https://ims-na1.adobelogin.com/s/ent_user_sdk"]
+SCOPES = []
 
-accessTokenRequestPayload = {'client_id': '{Your Client Id (API Key)}'
-                            ,'client_secret': 'Your Client Secret'}
+# prepare JWT payload
+jwt_payload = {
+    "iss": ORG_ID,
+    "sub": TECH_ACCT_ID,
+    "aud": CLIENT_ID,
+    "aud": f"https://ims-na1.adobelogin.com/c/{CLIENT_ID}",
+    "exp": datetime.datetime.utcnow() + datetime.timedelta(seconds=30),
+}
 
-# Request Access Key 
-#This Needs to point at where your private key is on the file system
-keyfile = open(os.path.join(os.path.expanduser('~'),'.ssh/private.key'),'r') 
-private_key = keyfile.read()
+# add scope claims to payload
+for scope in SCOPES:
+    jwt_payload[scope] = True
 
-# Encode the jwt Token
-jwttoken = jwt.encode(jwtPayloadJson, private_key, algorithm='RS256')
-#print("Encoded JWT Token")
-#print(jwttoken.decode('utf-8'))
+private_key = open(PRIV_KEY_PATH).read()
 
+# Encode the jwt with the private key
+jwt_token = jwt.encode(jwt_payload, private_key, algorithm='RS256')
 
-# We are making a http request simmilar to this curl request
-#curl -X POST -H "Content-Type: multipart/form-data" -F "client_id=CLIENT_ID" -F "client_secret=CLIENT_SECRET" -F "jwt_token=`./jwtenc.sh`" https://ims-na1.adobelogin.com/ims/exchange/jwt
-accessTokenRequestPayload['jwt_token'] = jwttoken
-result = requests.post(url, data = accessTokenRequestPayload)
-resultjson = json.loads(result.text);
-#print("Full output from the access token request")
-#print(json.dumps(resultjson, indent=4, sort_keys=True))
+headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Cache-Control": "no-cache",
+}
 
-# Echo out the access token
-print(resultjson["access_token"]);
+# encodw access request parameters
+body = urlencode({
+    "client_id": CLIENT_ID,
+    "client_secret": CLIENT_SECRET,
+    "jwt_token": jwt_token
+})
 
+auth_url = 'https://ims-na1.adobelogin.com/ims/exchange/jwt'
+
+res = requests.post(auth_url, headers=headers, data=body)
+
+print(res.json()["access_token"])
